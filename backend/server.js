@@ -13,6 +13,10 @@ console.log(JWT_SECRET);
 
 const app = express();
 
+
+const util = require('util');
+
+
 const connection = mysql2.createConnection({
     host: 'localhost',
     user: 'peluqueria',
@@ -115,8 +119,255 @@ app.post('/login', (req, res) => {
     });
 });
 
+/* app.post('/create-appointment/unregistered', async (req, res) => {
+    try {
+        const { nombre, apellido, email, telefono, empleadoId, servicioId, fecha, horaInicio } = req.body;
+
+        if (!nombre || !apellido || !email || !telefono || !empleadoId || !servicioId || !fecha || !horaInicio) {
+            return res.status(400).send({ message: 'Todos los campos son obligatorios.' });
+        }
+
+        // Verifica si el cliente ya está registrado en la base de datos usando el email
+        let query = 'SELECT cliente_id FROM clientes WHERE email = ?';
+        connection.query(query, [email], async (err, results) => {
+            if (err) {
+                console.error('Error buscando el cliente:', err);
+                return res.status(500).send({ message: 'Error interno del servidor' });
+            }
+
+            let cliente_id;
+
+            if (results.length > 0) {
+                // El cliente ya existe, usamos su ID
+                cliente_id = results[0].cliente_id;
+            } else {
+                // El cliente no existe, creamos una nueva entrada para él
+                query = 'INSERT INTO clientes (nombre, apellido, email, telefono) VALUES (?, ?, ?, ?)';
+                connection.query(query, [nombre, apellido, email, telefono], (err, results) => {
+                    if (err) {
+                        console.error('Error creando el cliente:', err);
+                        return res.status(500).send({ message: 'Error interno del servidor' });
+                    }
+                    
+                    // Usamos el ID del cliente recién creado
+                    cliente_id = results.insertId;
+                });
+            }
+
+            // Ahora creamos la nueva cita usando el cliente_id
+            query = 'INSERT INTO citas (cliente_id, empleado_id, servicio_id, fecha, hora_inicio) VALUES (?, ?, ?, ?, ?)';
+            connection.query(query, [cliente_id, empleadoId, servicioId, fecha, horaInicio], (err, results) => {
+                if (err) {
+                    console.error('Error creando la cita:', err);
+                    return res.status(500).send({ message: 'Error interno del servidor' });
+                }
+
+                res.status(201).send({ message: 'Cita creada exitosamente', citaId: results.insertId });
+            });
+        });
+
+    } catch (error) {
+        console.error('Error creando la cita:', error);
+        res.status(500).send({ message: 'Error interno del servidor' });
+    }
+}); */
+
+
+app.post('/create-appointment/unregistered', async (req, res) => {
+    try {
+        const { nombre, apellido, email, telefono, empleadoNombre, servicioNombre, fecha, horaInicio } = req.body;
+
+        if (!nombre || !apellido || !email || !empleadoNombre || !servicioNombre || !fecha || !horaInicio) {
+            return res.status(400).send({ message: 'Todos los campos son obligatorios.' });
+        }
+
+        // Verifica si el cliente ya está registrado en la base de datos usando el email
+        let query = 'SELECT cliente_id FROM clientes WHERE email = ?';
+        connection.query(query, [email], async (err, results) => {
+            if (err) {
+                console.error('Error buscando el cliente:', err);
+                return res.status(500).send({ message: 'Error interno del servidor' });
+            }
+
+            let cliente_id;
+
+            if (results.length > 0) {
+                // El cliente ya existe, usamos su ID
+                cliente_id = results[0].cliente_id;
+            } else {
+                // El cliente no existe, creamos una nueva entrada para él
+                query = 'INSERT INTO clientes (nombre, apellido, email, telefono) VALUES (?, ?, ?, ?)';
+                connection.query(query, [nombre, apellido, email, telefono], (err, results) => {
+                    if (err) {
+                        console.error('Error creando el cliente:', err);
+                        return res.status(500).send({ message: 'Error interno del servidor' });
+                    }
+                    
+                    // Usamos el ID del cliente recién creado
+                    cliente_id = results.insertId;
+                });
+            }
+
+            // Obtén el ID del empleado a partir de su nombre
+            query = 'SELECT empleado_id FROM empleados WHERE nombre = ?';
+            connection.query(query, [empleadoNombre], async (err, results) => {
+                if (err) {
+                    console.error('Error buscando el empleado:', err);
+                    return res.status(500).send({ message: 'Error interno del servidor' });
+                }
+
+                if (results.length === 0) {
+                    return res.status(404).send({ message: 'Empleado no encontrado' });
+                }
+
+                const empleadoId = results[0].empleado_id;
+
+                // Obtén el ID del servicio a partir de su nombre
+                query = 'SELECT servicio_id FROM servicios WHERE nombre = ?';
+                connection.query(query, [servicioNombre], async (err, results) => {
+                    if (err) {
+                        console.error('Error buscando el servicio:', err);
+                        return res.status(500).send({ message: 'Error interno del servidor' });
+                    }
+
+                    if (results.length === 0) {
+                        return res.status(404).send({ message: 'Servicio no encontrado' });
+                    }
+
+                    const servicioId = results[0].servicio_id;
+
+                    // Ahora creamos la nueva cita usando el cliente_id, empleadoId y servicioId
+                    query = 'INSERT INTO citas (cliente_id, empleado_id, servicio_id, fecha, hora_inicio) VALUES (?, ?, ?, ?, ?)';
+                    connection.query(query, [cliente_id, empleadoId, servicioId, fecha, horaInicio], (err, results) => {
+                        if (err) {
+                            console.error('Error creando la cita:', err);
+                            return res.status(500).send({ message: 'Error interno del servidor' });
+                        }
+
+                        res.status(201).send({ message: 'Cita creada exitosamente', citaId: results.insertId });
+                    });
+                });
+            });
+        });
+
+    } catch (error) {
+        console.error('Error creando la cita:', error);
+        res.status(500).send({ message: 'Error interno del servidor' });
+    }
+});
+
+
+
+
+app.delete('/cancel-appointment/:citaId', authenticateJWT, async (req, res) => {
+    try {
+        const { citaId } = req.params;
+        const clienteId = req.user.id; // Obtén el clienteId del token JWT
+
+        // Primero, verifica que el cliente que está intentando cancelar la cita sea el que la creó
+        const [rows] = await connection.promise().query('SELECT cliente_id FROM citas WHERE cita_id = ?', [citaId]);
+        if (rows.length === 0) {
+            return res.status(404).send({ message: 'Cita no encontrada' });
+        }
+
+        if (rows[0].cliente_id !== clienteId) {
+            return res.status(403).send({ message: 'No autorizado para cancelar esta cita' });
+        }
+
+        // Si la verificación es exitosa, procede a eliminar la cita
+        await connection.promise().query('DELETE FROM citas WHERE cita_id = ?', [citaId]);
+        res.status(200).send({ message: 'Cita cancelada exitosamente' });
+    } catch (error) {
+        console.error('Error cancelando la cita:', error);
+        res.status(500).send({ message: 'Error interno del servidor' });
+    }
+});
+
+// Nueva ruta para obtener el id del empleado
+
+app.get('/obtener-empleado-id/:nombre', async (req, res) => {
+    const nombreEmpleado = req.params.nombre;
+    
+    try {
+        // Realiza una consulta para obtener el empleado_id a partir del nombre
+        const query = 'SELECT empleado_id FROM empleados WHERE nombre = ?';
+        connection.query(query, [nombreEmpleado], (err, results) => {
+            if (err) {
+                console.error('Error obteniendo el empleado_id:', err);
+                return res.status(500).send({ message: 'Error interno del servidor' });
+            }
+
+            if (results.length === 0) {
+                return res.status(404).send({ message: 'Empleado no encontrado' });
+            }
+
+            const empleadoId = results[0].empleado_id;
+            res.status(200).send({ empleadoId });
+        });
+    } catch (error) {
+        console.error('Error obteniendo el empleado_id:', error);
+        res.status(500).send({ message: 'Error interno del servidor' });
+    }
+});
+
+// Nueva ruta para obtener el id del servicio
+
+app.get('/obtener-servicio-id/:nombre', async (req, res) => {
+    const nombreServicio = req.params.nombre;
+    
+    try {
+        // Realiza una consulta para obtener el servicio_id a partir del nombre
+        const query = 'SELECT servicio_id FROM servicios WHERE nombre = ?';
+        connection.query(query, [nombreServicio], (err, results) => {
+            if (err) {
+                console.error('Error obteniendo el servicio_id:', err);
+                return res.status(500).send({ message: 'Error interno del servidor' });
+            }
+
+            if (results.length == 0) {
+                return res.status(404).send({ message: 'Servicio no encontrado' });
+            }
+
+            const servicioId = results[0].servicio_id;
+            res.status(200).send({ servicioId });
+        });
+    } catch (error) {
+        console.error('Error obteniendo el servicio_id:', error);
+        res.status(500).send({ message: 'Error interno del servidor' });
+    }
+});
+
+// Nueva ruta para obtener el nombre y apellido del usuario a partir del id
+
+
+app.get('/obtener-cliente/:clienteId', async (req, res) => {
+    const clienteId = req.params.clienteId;
+
+    try {
+        // Realiza una consulta para obtener los datos del cliente a partir de su ID
+        const query = 'SELECT nombre, apellido FROM clientes WHERE cliente_id = ?';
+        connection.query(query, [clienteId], (err, results) => {
+            if (err) {
+                console.error('Error obteniendo los datos del cliente:', err);
+                return res.status(500).send({ message: 'Error interno del servidor' });
+            }
+
+            if (results.length === 0) {
+                return res.status(404).send({ message: 'Cliente no encontrado' });
+            }
+
+            const clienteData = results[0];
+            res.status(200).send(clienteData);
+        });
+    } catch (error) {
+        console.error('Error obteniendo los datos del cliente:', error);
+        res.status(500).send({ message: 'Error interno del servidor' });
+    }
+});
+
+
+
 // Nueva ruta para obtener las citas del usuario
-// Ruta para obtener citas del cliente
 app.get('/appointments/:clienteId', authenticateJWT, async (req, res) => {
     try {
         const clienteId = req.params.clienteId; // Obtén el clienteId de la URL
@@ -124,7 +375,7 @@ app.get('/appointments/:clienteId', authenticateJWT, async (req, res) => {
 
         const userId = req.user.id; // Suponiendo que guardas el ID del usuario en el token JWT
 
-        if (clienteId !== userId) {
+        if (clienteId != userId) {
             return res.status(403).json({ message: 'No tienes permiso para acceder a estas citas.' });
         }
 
@@ -159,8 +410,32 @@ async function get_user_appointments_from_database(clienteId) {
     });
 }
 
+// Endpoint para obtener las horas ocupadas
+app.get('/get-occupied-hours', async (req, res) => {
+    const { fecha, empleado_id } = req.query;
 
-// Resto de tus rutas...
+    try {
+        // Realiza una consulta SQL para obtener las horas ocupadas
+        connection.query(
+            'SELECT hora_inicio FROM citas WHERE fecha = ? AND empleado_id = ?',
+            [fecha, empleado_id], // Utiliza un arreglo para pasar los valores
+            (error, results) => {
+                if (error) {
+                    console.error('Error al obtener las horas ocupadas', error);
+                    res.status(500).json({ error: 'Error interno del servidor' });
+                } else {
+                    const occupiedHours = results.map((row) => row.hora_inicio);
+                    res.json({ occupiedHours });
+                }
+            }
+        );
+    } catch (error) {
+        console.error('Error al obtener las horas ocupadas', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+
 
 const PORT = 5000;
 app.listen(PORT, () => {
@@ -187,7 +462,6 @@ async function get_user_appointments_from_database(clienteId) {
         });
     });
 }
-
 
 
 
